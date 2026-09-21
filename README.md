@@ -2,6 +2,12 @@
 
 Single-file, zero-dependency .NET 8 console tool. No NuGet packages, no config files.
 
+**Start with no flags** on an interactive console for the menu-driven setup
+wizard (audit / scan / clean / Tier-0 / lean, dry-run or live). The wizard shows
+the equivalent command line before running, so every menu run is reproducible as
+flags. Flags below are the scriptable fallback (used automatically when piped).
+Logs roll automatically (10 newest kept).
+
 ## What it does
 
 1. **Windows temp/cache cleanup** (age-gated 7d default, skips locked files):

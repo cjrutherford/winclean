@@ -19,6 +19,8 @@ public sealed class CleanupOptions
     public bool Mitigate { get; set; }
     // --lean: constrained-environment profile (startup impact + service/feature guidance).
     public bool Lean { get; set; }
+    // --menu: force the setup wizard (default when started bare on a console).
+    public bool Menu { get; set; }
     // --color / --no-color; default auto (plain when redirected or NO_COLOR set).
     public string Color { get; set; } = "auto";
     public string LogDir { get; set; } = Path.Combine(

@@ -64,6 +64,58 @@ public static class Menu
         }
     }
 
+    // Single-select menu. Returns index or -1 (cancelled/blank).
+    public static int PickOne(string title, List<string> options)
+    {
+        try
+        {
+            if (!IsInteractive) return PickOneNumbered(title, options);
+            Console.Clear();
+            Console.WriteLine(Tui.Head(Tui.B(title)));
+            Console.WriteLine(Tui.Dimmed("  ↑/↓ move · enter select · esc cancel"));
+            Tui.Rule();
+            int cursor = 0;
+            while (true)
+            {
+                for (int i = 0; i < options.Count; i++)
+                {
+                    string line = $"  {(i == cursor ? Tui.B(">") : " ")} {options[i]}";
+                    if (i == cursor) Console.WriteLine(Tui.B(line));
+                    else Console.WriteLine(line);
+                }
+                var key = Console.ReadKey(intercept: true);
+                // Redraw options block.
+                try
+                {
+                    Console.SetCursorPosition(0, Console.CursorTop - options.Count);
+                    for (int i = 0; i < options.Count; i++)
+                        Console.WriteLine(new string(' ', Tui.Width()));
+                    Console.SetCursorPosition(0, Console.CursorTop - options.Count);
+                }
+                catch { Console.Clear(); }
+                if (key.Key == ConsoleKey.UpArrow) cursor = (cursor - 1 + options.Count) % options.Count;
+                else if (key.Key == ConsoleKey.DownArrow) cursor = (cursor + 1) % options.Count;
+                else if (key.Key == ConsoleKey.Enter) return cursor;
+                else if (key.Key == ConsoleKey.Escape) return -1;
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            return PickOneNumbered(title, options);
+        }
+    }
+
+    static int PickOneNumbered(string title, List<string> options)
+    {
+        Console.WriteLine(Tui.B(title));
+        for (int i = 0; i < options.Count; i++)
+            Console.WriteLine($"  {i + 1}. {options[i]}");
+        Console.Write("Enter number (blank cancels): ");
+        string? input = Console.ReadLine();
+        if (int.TryParse((input ?? "").Trim(), out int n) && n >= 1 && n <= options.Count)
+            return n - 1;
+        return -1;
+    }
     static List<int> PickManyNumbered(string title, List<string> options)
     {
         Console.WriteLine(Tui.B(title));

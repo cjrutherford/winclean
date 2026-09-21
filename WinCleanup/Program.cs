@@ -3,7 +3,13 @@ using WinCleanup.Cleaners;
 using WinCleanup.Models;
 using WinCleanup.Utils;
 
+AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+{
+    try { Console.WriteLine($"FATAL: {e.ExceptionObject}"); } catch { }
+};
+
 var o = Parse(args);
+bool noFlags = args.Length == 0;
 string defaultLogDir = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
     "WinCleanup", "logs");
@@ -12,9 +18,20 @@ if (!string.IsNullOrEmpty(o.FixtureRoot) && o.LogDir == defaultLogDir)
 if (string.IsNullOrEmpty(o.FixtureRoot) && !OperatingSystem.IsWindows())
     o.LogDir = Path.Combine(Path.GetTempPath(), "WinCleanup", "logs");
 using var log = new Logger(o.LogDir, verbose: o.Verbose);
+Logger.Prune(o.LogDir, keep: 10); // log rolling: keep the 10 newest logs
 if (o.Color == "always") Tui.ColorEnabled = true;
 else if (o.Color == "never") Tui.ColorEnabled = false;
 var display = new Display(log);
+
+// Primary interface: menu-driven wizard when started bare on a console.
+// Flags remain as the scriptable fallback (and whenever input is piped).
+if ((noFlags || o.Menu) && !o.SelfTest && Menu.IsInteractive)
+{
+    var picked = Wizard.Run(log, display, o);
+    if (picked is null) { log.Info("cancelled from setup menu."); return 0; }
+    o = picked;
+    log.VerboseEnabled = o.Verbose;
+}
 log.Info($"WinCleanup v0.1.0 dryRun={o.DryRun} clean={o.DoClean} audit={o.DoAudit} minAge={o.MinAgeDays}d verbose={o.Verbose} fixture='{o.FixtureRoot}' selfTest={o.SelfTest}");
 log.Verbose($"options: assumeYes={o.AssumeYes} allowQbRunning={o.AllowQbRunning} includePrefetch={o.IncludePrefetch} logDir={o.LogDir} os={Environment.OSVersion}");
 
@@ -34,7 +51,8 @@ var stages = new List<string> { "Detect QuickBooks" };
 if (o.OffendersOnly) stages.Add("Offender scan");
 else
 {
-    if (o.DoAudit) { stages.Add("Audit"); stages.Add("Offender scan"); }
+    if (o.DoAudit) stages.Add("Audit");
+    if (o.DoAudit || o.Mitigate) stages.Add("Offender scan");
     if (o.DoClean) stages.Add("Cleanup");
 }
 if (o.Lean) stages.Add("Lean profile");
@@ -81,6 +99,10 @@ if (o.DoAudit)
         SoftwareInventory.Report(log);
         BottleneckReport.Run(log);
     }
+}
+
+if (!o.OffendersOnly && (o.DoAudit || o.Mitigate))
+{
     plan.Begin("Offender scan");
     var (offenders, mitigated) = RunOffenders(log, o, installs, plan, display);
     summary.TopOffenders(offenders);
@@ -187,6 +209,8 @@ static CleanupOptions Parse(string[] args)
         else if (a == "--offenders") { o.OffendersOnly = true; o.DoClean = false; o.Verbose = true; }
         else if (a == "--mitigate") o.Mitigate = true;
         else if (a == "--lean") o.Lean = true;
+        else if (a == "--menu") o.Menu = true;
+        else if (a == "--no-audit") o.DoAudit = false;
         else if (a.StartsWith("--fixture-root=")) o.FixtureRoot = a["--fixture-root=".Length..];
         else if (a.StartsWith("--min-age=") && int.TryParse(a["--min-age=".Length..], out var d)) o.MinAgeDays = d;
         else if (a.StartsWith("--log-dir=")) o.LogDir = a["--log-dir=".Length..];
@@ -194,6 +218,10 @@ static CleanupOptions Parse(string[] args)
         {
             Console.WriteLine("""
                 WinCleanup — Windows + QuickBooks-safe cleanup & audit (verbose by default)
+
+                No flags on an interactive console opens the setup wizard, which
+                shows the equivalent command line before running. Flags below are
+                the scriptable fallback (and are used whenever input is piped).
                 Usage:
                   WinCleanup [--audit-only] [--clean] [--dry-run] [--yes]
                              [--min-age=7] [--allow-qb-running] [--include-prefetch]

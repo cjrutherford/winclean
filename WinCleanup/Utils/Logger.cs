@@ -31,4 +31,23 @@ public sealed class Logger : IDisposable
     }
 
     public void Dispose() => _w.Dispose();
+
+    // Log rolling: keep the newest `keep` wincleanup-*.log files, delete older.
+    public static void Prune(string dir, int keep = 10)
+    {
+        try
+        {
+            if (!Directory.Exists(dir)) return;
+            var old = Directory.GetFiles(dir, "wincleanup-*.log")
+                .Select(f => new FileInfo(f))
+                .OrderByDescending(f => f.LastWriteTime)
+                .Skip(keep)
+                .ToList();
+            foreach (var f in old)
+            {
+                try { f.Delete(); } catch { }
+            }
+        }
+        catch { }
+    }
 }
