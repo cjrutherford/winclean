@@ -22,7 +22,6 @@ jobs:
         run: >
           dotnet publish WinCleanup/WinCleanup.csproj -c Release -r win-x64
           --self-contained -p:PublishSingleFile=true
-          -p:TargetFramework=net8.0-windows -p:EnableWindowsTargeting=true
           -o ./publish/win-x64
       - name: Attach to GitHub Release
         uses: softprops/action-gh-release@v2

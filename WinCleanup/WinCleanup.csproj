@@ -2,11 +2,10 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net8.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <!-- Release publish for Windows: dotnet publish -r win-x64 -p:TargetFramework=net8.0-windows -p:EnableWindowsTargeting=true -->
-    <EnableWindowsTargeting Condition="'$(TargetFramework)' == 'net8.0-windows'">true</EnableWindowsTargeting>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <AssemblyName>WinCleanup</AssemblyName>
     <RootNamespace>WinCleanup</RootNamespace>
     <Version>0.1.0</Version>

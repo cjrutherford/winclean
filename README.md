@@ -49,5 +49,5 @@ WinCleanup.exe --clean --yes                     # real run (Admin, QB closed)
 Build the single-file exe (from Windows, or cross-publish):
 ```powershell
 dotnet publish WinCleanup/WinCleanup.csproj -c Release -r win-x64 --self-contained `
-  -p:PublishSingleFile=true -p:TargetFramework=net8.0-windows -p:EnableWindowsTargeting=true
+  -p:PublishSingleFile=true
 ```
