@@ -82,7 +82,16 @@ public static class SafeDelete
         try { files = Directory.GetFiles(dir, filePattern, SearchOption.AllDirectories); }
         catch (Exception ex) { s.Errors.Add($"{dir}: {ex.Message}"); log.Warn($"LIST-FAIL {dir}: {ex.Message}"); return; }
         log.Verbose($"FOUND {files.Length} files under {dir}");
-        foreach (var f in files) DeleteFileAged(f, minAge, dryRun, s, log, qbRoot);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        int done = 0;
+        foreach (var f in files)
+        {
+            DeleteFileAged(f, minAge, dryRun, s, log, qbRoot);
+            if (++done % 500 == 0)
+                log.Info($"  …{done}/{files.Length} files ({100 * done / files.Length}%) in {ShortDir(dir)}");
+        }
+        sw.Stop();
+        log.Info($"swept {ShortDir(dir)}: {files.Length} files in {sw.Elapsed.TotalSeconds:F1}s");
         if (!dryRun)
         {
             int removed = 0;
@@ -98,5 +107,17 @@ public static class SafeDelete
             log.Verbose($"EXIT dir={dir} removedDirs={removed}");
         }
         else log.Verbose($"EXIT dir={dir} (dry-run, no rmdir)");
+    }
+
+    static string ShortDir(string dir)
+    {
+        try
+        {
+            string root = Path.GetPathRoot(dir) ?? "";
+            string rest = dir[root.Length..].Trim(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var parts = rest.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return parts.Length <= 3 ? dir : Path.Combine(root, "…", Path.Combine(parts[^3], parts[^2], parts[^1]));
+        }
+        catch { return dir; }
     }
 }

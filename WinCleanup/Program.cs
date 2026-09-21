@@ -27,13 +27,26 @@ if (o.DoClean && !AdminHelper.IsAdmin() && OperatingSystem.IsWindows())
     return 2;
 }
 
+var stages = new List<string> { "Detect QuickBooks" };
+if (o.OffendersOnly) stages.Add("Offender scan");
+else
+{
+    if (o.DoAudit) { stages.Add("Audit"); stages.Add("Offender scan"); }
+    if (o.DoClean) stages.Add("Cleanup");
+}
+if (o.Mitigate) stages.Add("Mitigate");
+stages.Add("Summary");
+var plan = new StagePlan(log, stages);
+
+plan.Begin("Detect QuickBooks");
 var installs = QuickBooksCleaner.Detect(log, o.FixtureRoot);
 var summary = new Summary();
 summary.Mode($"{(o.DoClean ? "clean" : "audit")}{(o.OffendersOnly ? " + offenders" : "")}{(o.Mitigate ? " + mitigate" : "")}{(o.DryRun ? " (dry-run)" : " (LIVE)")}");
 
 if (o.OffendersOnly)
 {
-    var (offenders, mitigated) = RunOffenders(log, o, installs);
+    plan.Begin("Offender scan");
+    var (offenders, mitigated) = RunOffenders(log, o, installs, plan);
     summary.TopOffenders(offenders);
     summary.Action(offenders.Count == 0 ? "No offenders found" : $"{offenders.Count} offenders ranked");
     if (mitigated > 0) summary.Action($"Tier-0 mitigation: {mitigated} actions{(o.DryRun ? " (dry-run preview)" : "")}; undo bundle in {o.LogDir}");
@@ -45,6 +58,7 @@ if (o.OffendersOnly)
 
 if (o.DoAudit)
 {
+    plan.Begin("Audit");
     if (!string.IsNullOrEmpty(o.FixtureRoot) || !OperatingSystem.IsWindows())
     {
         // Fixture/Linux manual verification: inventory + bottleneck run against fixture CSV.
@@ -58,7 +72,8 @@ if (o.DoAudit)
         SoftwareInventory.Report(log);
         BottleneckReport.Run(log);
     }
-    var (offenders, mitigated) = RunOffenders(log, o, installs);
+    plan.Begin("Offender scan");
+    var (offenders, mitigated) = RunOffenders(log, o, installs, plan);
     summary.TopOffenders(offenders);
     summary.Action($"{offenders.Count} offenders ranked");
     if (mitigated > 0) summary.Action($"Tier-0 mitigation: {mitigated} actions{(o.DryRun ? " (dry-run preview)" : "")}; undo bundle in {o.LogDir}");
@@ -67,6 +82,7 @@ if (o.DoAudit)
 
 if (o.DoClean)
 {
+    plan.Begin("Cleanup");
     if (AdminHelper.IsQuickBooksRunning() && !o.AllowQbRunning && string.IsNullOrEmpty(o.FixtureRoot))
     {
         log.Error("QuickBooks (QBW32/QBDBMgr) is running. Close it or pass --allow-qb-running.");
@@ -88,11 +104,12 @@ if (o.DoClean)
     if (o.DryRun) summary.Next("Apply for real: --clean --yes (Admin, QB closed)");
 }
 
+plan.Begin("Summary");
 summary.Print(log, log.Path);
 log.Info($"done. full verbose log: {log.Path}");
 return 0;
 
-static (List<Offender> offenders, int mitigated) RunOffenders(Logger log, CleanupOptions o, List<QuickBooksCleaner.Install> installs)
+static (List<Offender> offenders, int mitigated) RunOffenders(Logger log, CleanupOptions o, List<QuickBooksCleaner.Install> installs, StagePlan plan)
 {
     log.Info("=== WORST-OFFENDER SCAN ===");
     var offenders = OffenderScan.Scan(log, o, installs);
@@ -110,6 +127,7 @@ static (List<Offender> offenders, int mitigated) RunOffenders(Logger log, Cleanu
     int mitigated = 0;
     if (o.Mitigate)
     {
+        plan.Begin("Mitigate");
         if (!o.AssumeYes && o.DryRun == false && string.IsNullOrEmpty(o.FixtureRoot))
         {
             Console.Write("Type MITIGATE to apply Tier-0 fixes: ");

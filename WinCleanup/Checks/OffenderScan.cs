@@ -118,15 +118,12 @@ public static class OffenderScan
         else log.Verbose("security: no QB installs — skip exclusion check");
     }
 
-    // ---- 2. InboxAppx ----
+    // ---- 2. InboxAppx (table-driven; see AppxCatalog) ----
     static void DetectInboxAppx(Logger log, string fixtureRoot, List<Offender> out_)
     {
-        string[] blocklist =
-        [
-            "Xbox", "SolitaireCollection", "Clipchamp", "BingNews", "BingWeather",
-            "Copilot", "Cortana", "MicrosoftTeams", "FeedbackHub", "BingMaps",
-            "ZuneMusic", "ZuneVideo", "People", "SkypeApp", "MixedReality", "3DViewer",
-        ];
+        bool policyDebloat = AppxCatalog.PolicyDebloatActive(log);
+        if (policyDebloat)
+            log.Info("appx: policy-based debloat is active (RemoveDefaultMicrosoftStorePackages) — fewer inbox apps expected");
 
         var packages = new List<string>();
         if (!string.IsNullOrEmpty(fixtureRoot))
@@ -160,14 +157,13 @@ public static class OffenderScan
 
         foreach (var pkg in packages.Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            var key = blocklist.FirstOrDefault(k => pkg.Contains(k, StringComparison.OrdinalIgnoreCase));
-            if (key == null) continue;
-            string evidence = $"Inbox Appx '{pkg}' matches blocklist '{key}'.";
-            if (key.Equals("MicrosoftTeams", StringComparison.OrdinalIgnoreCase))
-                evidence += " Personal only — keep work/school Teams.";
-            log.Verbose($"appx: {evidence}");
+            var entry = AppxCatalog.All.FirstOrDefault(e => pkg.Contains(e.Substring, StringComparison.OrdinalIgnoreCase));
+            if (entry == null) continue;
+            int score = entry.Caution ? 15 : 25;
+            string evidence = $"Inbox Appx '{pkg}' matches catalog '{entry.Substring}' ({entry.Note}).";
+            log.Verbose($"appx: {evidence} caution={entry.Caution}");
             out_.Add(new Offender(
-                "InboxAppx", pkg, 25, 1.0, evidence, "Tier1",
+                "InboxAppx", pkg, score, 1.0, evidence, "Tier1",
                 $"Get-AppxPackage *{pkg}* | Remove-AppxPackage"));
         }
     }

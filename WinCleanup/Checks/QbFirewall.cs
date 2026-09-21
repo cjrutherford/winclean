@@ -33,13 +33,22 @@ public static class QbFirewall
         return 0;
     }
 
+    // Static per-year TCP ports (Intuit docs). 2019+ (incl. 2024/2025) use dynamic
+    // ports: only 8019 is static; the live port comes from
+    // Database Server Manager > Port Monitor (renewable; rescan folders after).
     public static int[] StaticPorts(int year) => year switch
     {
+        2013 => new[] { 8019, 56723, 55353, 55354, 55355, 55356, 55357 },
+        2014 => new[] { 8019, 56724, 55358, 55359, 55360, 55361, 55362 },
+        2015 => new[] { 8019, 56725, 55363, 55364, 55365, 55366, 55367 },
+        2016 => new[] { 8019, 56726, 55368, 55369, 55370, 55371, 55372 },
         2017 => new[] { 8019, 56727, 55373, 55374, 55375, 55376, 55377 },
         2018 => new[] { 8019, 56728, 55378, 55379, 55380, 55381, 55382 },
         >= 2019 => new[] { 8019 },
         _ => new[] { 8019 },
     };
+
+    public static bool UsesDynamicPorts(int year) => year >= 2019 || year == 0;
 
     public static bool HasInboundRule(Logger log, int port)
     {
@@ -108,8 +117,8 @@ public static class QbFirewall
             log.Verbose($"firewall: print rules QB {inst.Version} year={year} ports=[{csv}]");
             log.Info($"netsh advfirewall firewall add rule name=\"QuickBooks {inst.Version} inbound\" dir=in action=allow protocol=TCP localport={csv}");
             log.Info($"netsh advfirewall firewall add rule name=\"QuickBooks {inst.Version} outbound\" dir=out action=allow protocol=TCP localport={csv}");
-            if (year >= 2019)
-                log.Info($"note: QuickBooks {inst.Version} ({year}) uses dynamic ports — confirm the live range in Database Server Manager > Port Monitor");
+            if (UsesDynamicPorts(year))
+                log.Info($"note: QuickBooks {inst.Version} ({(year == 0 ? "unknown year" : year.ToString())}) uses dynamic ports (2019+, incl. 2024/2025): allow 8019 PLUS the live port from Database Server Manager > Port Monitor tab (Renew there, then Scan Folders > Scan Now to reset permissions)");
             if (!string.IsNullOrWhiteSpace(inst.ProgramDir))
             {
                 foreach (var exe in new[] { "QBW32.exe", "QBDBMgrN.exe", "QBCFMonitorService.exe", "QBUpdate.exe" })
@@ -124,6 +133,6 @@ public static class QbFirewall
                 log.Verbose($"firewall: QB {inst.Version} has no ProgramDir — skip program rules");
             }
         }
-        log.Info("note: 2019+ use dynamic ports readable in Database Server Manager > Port Monitor — add the live range alongside port 8019");
+        log.Info("note: 2019+ (incl. 2024/2025) use dynamic ports — 8019 plus the live Port Monitor port; renew + rescan folders after changing");
     }
 }
