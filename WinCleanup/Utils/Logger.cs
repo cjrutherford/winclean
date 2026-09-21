@@ -17,6 +17,8 @@ public sealed class Logger : IDisposable
     public void Info(string m) => Write("INFO", m, console: true);
     public void Warn(string m) => Write("WARN", m, console: true);
     public void Error(string m) => Write("ERROR", m, console: true);
+    // File: log-file only (used by Display mirrors so console isn't doubled).
+    public void File(string m) => Write("INFO", m, console: false);
     // Verbose: always to file, to console only when VerboseEnabled.
     public void Verbose(string m) => Write("VERBOSE", m, console: VerboseEnabled);
     public void Debug(string m) => Write("DEBUG", m, console: VerboseEnabled);

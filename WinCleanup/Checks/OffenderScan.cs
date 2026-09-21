@@ -33,7 +33,7 @@ public static class OffenderScan
             .ToList();
 
         foreach (var off in result)
-            log.Info($"offender [{off.Category}/{off.Tier}] score={off.Score}x{off.ConflictMultiplier} :: {off.Name} — {off.Evidence}");
+            log.Verbose($"offender [{off.Category}/{off.Tier}] score={off.Score}x{off.ConflictMultiplier} :: {off.Name} — {off.Evidence}");
 
         return result;
     }

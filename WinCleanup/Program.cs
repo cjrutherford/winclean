@@ -12,6 +12,9 @@ if (!string.IsNullOrEmpty(o.FixtureRoot) && o.LogDir == defaultLogDir)
 if (string.IsNullOrEmpty(o.FixtureRoot) && !OperatingSystem.IsWindows())
     o.LogDir = Path.Combine(Path.GetTempPath(), "WinCleanup", "logs");
 using var log = new Logger(o.LogDir, verbose: o.Verbose);
+if (o.Color == "always") Tui.ColorEnabled = true;
+else if (o.Color == "never") Tui.ColorEnabled = false;
+var display = new Display(log);
 log.Info($"WinCleanup v0.1.0 dryRun={o.DryRun} clean={o.DoClean} audit={o.DoAudit} minAge={o.MinAgeDays}d verbose={o.Verbose} fixture='{o.FixtureRoot}' selfTest={o.SelfTest}");
 log.Verbose($"options: assumeYes={o.AssumeYes} allowQbRunning={o.AllowQbRunning} includePrefetch={o.IncludePrefetch} logDir={o.LogDir} os={Environment.OSVersion}");
 
@@ -46,7 +49,7 @@ summary.Mode($"{(o.DoClean ? "clean" : "audit")}{(o.OffendersOnly ? " + offender
 if (o.OffendersOnly)
 {
     plan.Begin("Offender scan");
-    var (offenders, mitigated) = RunOffenders(log, o, installs, plan);
+    var (offenders, mitigated) = RunOffenders(log, o, installs, plan, display);
     summary.TopOffenders(offenders);
     summary.Action(offenders.Count == 0 ? "No offenders found" : $"{offenders.Count} offenders ranked");
     if (mitigated > 0) summary.Action($"Tier-0 mitigation: {mitigated} actions{(o.DryRun ? " (dry-run preview)" : "")}; undo bundle in {o.LogDir}");
@@ -79,7 +82,7 @@ if (o.DoAudit)
         BottleneckReport.Run(log);
     }
     plan.Begin("Offender scan");
-    var (offenders, mitigated) = RunOffenders(log, o, installs, plan);
+    var (offenders, mitigated) = RunOffenders(log, o, installs, plan, display);
     summary.TopOffenders(offenders);
     summary.Action($"{offenders.Count} offenders ranked");
     if (mitigated > 0) summary.Action($"Tier-0 mitigation: {mitigated} actions{(o.DryRun ? " (dry-run preview)" : "")}; undo bundle in {o.LogDir}");
@@ -122,9 +125,9 @@ summary.Print(log, log.Path);
 log.Info($"done. full verbose log: {log.Path}");
 return 0;
 
-static (List<Offender> offenders, int mitigated) RunOffenders(Logger log, CleanupOptions o, List<QuickBooksCleaner.Install> installs, StagePlan plan)
+static (List<Offender> offenders, int mitigated) RunOffenders(Logger log, CleanupOptions o, List<QuickBooksCleaner.Install> installs, StagePlan plan, Display display)
 {
-    log.Info("=== WORST-OFFENDER SCAN ===");
+    display.Section("Worst-offender scan");
     var offenders = OffenderScan.Scan(log, o, installs);
     offenders.AddRange(QbFirewall.Check(log, installs));
     offenders.AddRange(StartupAnalyzer.Analyze(log, o));
@@ -133,22 +136,31 @@ static (List<Offender> offenders, int mitigated) RunOffenders(Logger log, Cleanu
     log.Info($"offenders ranked: {offenders.Count}");
     int rank = 0;
     foreach (var f in offenders.Take(25))
-    {
-        rank++;
-        log.Info($"  #{rank} [{f.Category}/{f.Tier}] score={f.Score}x{f.ConflictMultiplier} {f.Name} — {f.Evidence}");
-        if (!string.IsNullOrEmpty(f.FixHint)) log.Info($"       fix: {f.FixHint}");
-    }
+        display.OffenderCard(++rank, f);
     if (installs.Count > 0) QbFirewall.PrintRules(log, installs);
     int mitigated = 0;
     if (o.Mitigate)
     {
-        log.Info("Tier-0 mitigation starting (consented)");
-        if (!o.AssumeYes && o.DryRun == false && string.IsNullOrEmpty(o.FixtureRoot))
+        var tier0 = offenders.Where(f => f.Tier == "Tier0").ToList();
+        List<Offender> chosen = tier0;
+        if (!o.AssumeYes && !o.DryRun && string.IsNullOrEmpty(o.FixtureRoot))
         {
-            Console.Write("Type MITIGATE to apply Tier-0 fixes: ");
-            if (Console.ReadLine()?.Trim() != "MITIGATE") { log.Info("mitigation aborted by user"); return (offenders, 0); }
+            if (tier0.Count == 0) log.Info("No Tier-0 fixes to apply.");
+            else if (Menu.IsInteractive)
+            {
+                var picked = Menu.PickMany("Tier-0 fixes — space to toggle, enter to apply",
+                    tier0.Select(t => t.Name).ToList(),
+                    tier0.Select(t => t.Evidence).ToList());
+                chosen = picked.Select(i => tier0[i]).ToList();
+                log.Info($"Tier-0 selection: {chosen.Count}/{tier0.Count} picked (consented via menu)");
+            }
+            else
+            {
+                Console.Write("Type MITIGATE to apply all Tier-0 fixes: ");
+                if (Console.ReadLine()?.Trim() != "MITIGATE") { log.Info("mitigation aborted by user"); return (offenders, 0); }
+            }
         }
-        mitigated = Mitigate.ApplyTier0(log, o, offenders, installs);
+        mitigated = Mitigate.ApplyTier0(log, o, chosen, installs);
         log.Info($"Tier-0 mitigation: {mitigated} actions{(o.DryRun ? " (dry-run)" : "")}");
     }
     else if (offenders.Any(f => f.Tier == "Tier0"))
@@ -169,6 +181,8 @@ static CleanupOptions Parse(string[] args)
         else if (a == "--include-prefetch") o.IncludePrefetch = true;
         else if (a == "--verbose") o.Verbose = true;
         else if (a == "--quiet") o.Verbose = false;
+        else if (a == "--color") o.Color = "always";
+        else if (a == "--no-color") o.Color = "never";
         else if (a == "--self-test") { o.SelfTest = true; o.Verbose = true; }
         else if (a == "--offenders") { o.OffendersOnly = true; o.DoClean = false; o.Verbose = true; }
         else if (a == "--mitigate") o.Mitigate = true;
@@ -187,6 +201,7 @@ static CleanupOptions Parse(string[] args)
                   WinCleanup --self-test [--min-age=7]
                   WinCleanup --offenders [--mitigate] [--dry-run|--yes]
                   WinCleanup --clean --fixture-root=/tmp/myfixture --min-age=7
+                  [--color|--no-color] forces display color on/off (auto otherwise).
 
                 Audit = system (disk/RAM/CPU/SMART/eventlog/startup/updates/net)
                       + QuickBooks config + software inventory + bottleneck report.

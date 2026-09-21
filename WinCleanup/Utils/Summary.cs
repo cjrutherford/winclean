@@ -24,29 +24,37 @@ public sealed class Summary
             _findings.Add($"…plus {offenders.Count - n} more (see log)");
     }
 
-    public void Print(Logger log, string logPath)
+    public void Print(Display d, string logPath)
     {
-        log.Info("");
-        log.Info("================ SUMMARY ================");
-        if (!string.IsNullOrEmpty(_mode)) log.Info($"Mode: {_mode}");
+        var lines = new List<string>
+        {
+            string.IsNullOrEmpty(_mode) ? "WinCleanup run" : $"Mode: {_mode}",
+            "",
+        };
         if (_findings.Count > 0)
         {
-            log.Info($"Key findings ({_findings.Count}):");
-            foreach (var f in _findings) log.Info($"  - {f}");
+            lines.Add($"Key findings ({_findings.Count}):");
+            lines.AddRange(_findings.Select(f => $"  - {f}"));
         }
-        else log.Info("Key findings: none");
+        else lines.Add("Key findings: none");
+        lines.Add("");
         if (_actions.Count > 0)
         {
-            log.Info("Actions taken:");
-            foreach (var a in _actions) log.Info($"  - {a}");
+            lines.Add("Actions taken:");
+            lines.AddRange(_actions.Select(a => $"  - {a}"));
         }
-        else log.Info("Actions taken: none (read-only run)");
+        else lines.Add("Actions taken: none (read-only run)");
         if (_next.Count > 0)
         {
-            log.Info("Suggested next steps:");
-            foreach (var s in _next) log.Info($"  - {s}");
+            lines.Add("");
+            lines.Add("Suggested next steps:");
+            lines.AddRange(_next.Select((s, i) => $"  {i + 1}. {s}"));
         }
-        log.Info($"Full verbose log: {logPath}");
-        log.Info("=========================================");
+        lines.Add("");
+        lines.Add($"Full verbose log: {logPath}");
+        d.Box("SUMMARY", lines);
     }
+
+    // Legacy plain path (kept for non-display flows).
+    public void Print(Logger log, string logPath) => Print(new Display(log), logPath);
 }
