@@ -14,6 +14,9 @@ public sealed class CleanupOptions
     public string FixtureRoot { get; set; } = "";
     // --self-test: build a fake Windows+QB tree, run dry-run + real clean, verify.
     public bool SelfTest { get; set; }
+    // --offenders: run only the offender scan (+ firewall rules). --mitigate: apply Tier-0.
+    public bool OffendersOnly { get; set; }
+    public bool Mitigate { get; set; }
     public string LogDir { get; set; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
         "WinCleanup", "logs");

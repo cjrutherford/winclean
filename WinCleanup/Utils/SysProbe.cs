@@ -28,5 +28,14 @@ public static class SysProbe
         catch (Exception ex) { log?.Verbose($"PROBE fail {file} {args}: {ex.Message}"); return ""; }
     }
 
+    // PowerShell runner for Tier-0 mitigations and Appx queries.
+    // Windows only; returns "" elsewhere. Every invocation is verbose-logged.
+    public static string PowerShell(string command, int timeoutMs = 30000, Logger? log = null)
+    {
+        if (!OperatingSystem.IsWindows()) { log?.Verbose("PROBE powershell skipped non-Windows"); return ""; }
+        var encoded = Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(command));
+        return Run("powershell", $"-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {encoded}", timeoutMs, log);
+    }
+
     static string Trunc(string s, int n) => s.Length <= n ? s : s[..n] + "…";
 }

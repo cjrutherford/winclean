@@ -24,6 +24,13 @@ if (o.DoClean && !AdminHelper.IsAdmin() && OperatingSystem.IsWindows())
 
 var installs = QuickBooksCleaner.Detect(log, o.FixtureRoot);
 
+if (o.OffendersOnly)
+{
+    RunOffenders(log, o, installs);
+    log.Info($"done. full verbose log: {log.Path}");
+    return 0;
+}
+
 if (o.DoAudit)
 {
     if (!string.IsNullOrEmpty(o.FixtureRoot) || !OperatingSystem.IsWindows())
@@ -39,6 +46,7 @@ if (o.DoAudit)
         SoftwareInventory.Report(log);
         BottleneckReport.Run(log);
     }
+    RunOffenders(log, o, installs);
 }
 
 if (o.DoClean)
@@ -63,6 +71,35 @@ if (o.DoClean)
 log.Info($"done. full verbose log: {log.Path}");
 return 0;
 
+static void RunOffenders(Logger log, CleanupOptions o, List<QuickBooksCleaner.Install> installs)
+{
+    log.Info("=== WORST-OFFENDER SCAN ===");
+    var offenders = OffenderScan.Scan(log, o, installs);
+    offenders.AddRange(QbFirewall.Check(log, installs));
+    offenders = offenders.OrderByDescending(x => x.Score * x.ConflictMultiplier).ToList();
+    log.Info($"offenders ranked: {offenders.Count}");
+    int rank = 0;
+    foreach (var f in offenders.Take(25))
+    {
+        rank++;
+        log.Info($"  #{rank} [{f.Category}/{f.Tier}] score={f.Score}x{f.ConflictMultiplier} {f.Name} — {f.Evidence}");
+        if (!string.IsNullOrEmpty(f.FixHint)) log.Info($"       fix: {f.FixHint}");
+    }
+    if (installs.Count > 0) QbFirewall.PrintRules(log, installs);
+    if (o.Mitigate)
+    {
+        if (!o.AssumeYes && o.DryRun == false && string.IsNullOrEmpty(o.FixtureRoot))
+        {
+            Console.Write("Type MITIGATE to apply Tier-0 fixes: ");
+            if (Console.ReadLine()?.Trim() != "MITIGATE") { log.Info("mitigation aborted by user"); return; }
+        }
+        int applied = Mitigate.ApplyTier0(log, o, offenders, installs);
+        log.Info($"Tier-0 mitigation: {applied} actions{(o.DryRun ? " (dry-run)" : "")}");
+    }
+    else if (offenders.Any(f => f.Tier == "Tier0"))
+        log.Info("Tier-0 fixes available — re-run with --mitigate [--dry-run] to preview/apply");
+}
+
 static CleanupOptions Parse(string[] args)
 {
     var o = new CleanupOptions();
@@ -77,6 +114,8 @@ static CleanupOptions Parse(string[] args)
         else if (a == "--verbose") o.Verbose = true;
         else if (a == "--quiet") o.Verbose = false;
         else if (a == "--self-test") { o.SelfTest = true; o.Verbose = true; }
+        else if (a == "--offenders") { o.OffendersOnly = true; o.DoClean = false; o.Verbose = true; }
+        else if (a == "--mitigate") o.Mitigate = true;
         else if (a.StartsWith("--fixture-root=")) o.FixtureRoot = a["--fixture-root=".Length..];
         else if (a.StartsWith("--min-age=") && int.TryParse(a["--min-age=".Length..], out var d)) o.MinAgeDays = d;
         else if (a.StartsWith("--log-dir=")) o.LogDir = a["--log-dir=".Length..];
@@ -89,6 +128,7 @@ static CleanupOptions Parse(string[] args)
                              [--min-age=7] [--allow-qb-running] [--include-prefetch]
                              [--verbose|--quiet] [--log-dir=DIR]
                   WinCleanup --self-test [--min-age=7]
+                  WinCleanup --offenders [--mitigate] [--dry-run|--yes]
                   WinCleanup --clean --fixture-root=/tmp/myfixture --min-age=7
 
                 Audit = system (disk/RAM/CPU/SMART/eventlog/startup/updates/net)

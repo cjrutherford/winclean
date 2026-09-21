@@ -52,12 +52,28 @@ public static class SelfTest
         Mk(Path.Combine("users", "QBDataServiceUser27", "AppData", "Local", "Temp", "search_data.12345.dat"), 3072, old_);
 
         // Fake Add/Remove inventory for Linux manual verification.
+        // Includes a second AV (dual-engine conflict) + OEM bloat for 0.2 scan.
         File.WriteAllText(Path.Combine(root, "installed-apps.csv"),
             "Name,Version,Publisher\n" +
             "QuickBooks Enterprise 24.0,24.0.1,Intuit\n" +
             "Microsoft .NET Runtime 8.0,8.0.14,Microsoft\n" +
             "Acme Updater Helper,3.2,Acme\n" +
-            "Old Trial Suite 2019,19.0,OldCo\n");
+            "Old Trial Suite 2019,19.0,OldCo\n" +
+            "Contoso Antivirus Plus,9.1,Contoso\n" +
+            "Norton 360,22.0,Norton\n" +
+            "McAfee LiveSafe,16.0,McAfee\n" +
+            "Dell SupportAssist,4.0,Dell\n");
+        // Fake Appx packages + scheduled tasks for 0.2 offender scan.
+        File.WriteAllText(Path.Combine(root, "appx-packages.csv"),
+            "Name\n" +
+            "Microsoft.XboxApp\n" +
+            "Microsoft.BingNews\n" +
+            "Microsoft.WindowsCalculator\n");
+        File.WriteAllText(Path.Combine(root, "tasks.csv"),
+            "Name,State\n" +
+            "Adobe Acrobat Update Task,Ready\n" +
+            "Adobe Genuine Software Monitor,Ready\n" +
+            "GoogleUpdateTaskMachineCore,Running\n");
         return root;
     }
 
@@ -112,6 +128,22 @@ public static class SelfTest
         var apps = SoftwareInventory.GetInstalledApps(log, o.FixtureRoot);
         bool invOk = apps.Any(a => a.Name.Contains("QuickBooks"));
         log.Info($"self-test inventory: apps={apps.Count} qbFound={invOk} result={(invOk ? "PASS" : "FAIL")}");
-        return okAll && invOk ? 0 : 11;
+
+        // Phase 4: 0.2 offender scan — dual-AV flagged, Tier-0 dry-run changes nothing.
+        var offenders = OffenderScan.Scan(log, o, installs);
+        bool dualAv = offenders.Any(f => f.Category == "SecurityConflicts" && (f.Name.Contains("McAfee") || f.Name.Contains("Norton")));
+        bool appx = offenders.Any(f => f.Category == "InboxAppx");
+        bool updater = offenders.Any(f => f.Category == "UpdaterSprawl");
+        bool oem = offenders.Any(f => f.Category == "OemBloat");
+        log.Info($"self-test offenders: total={offenders.Count} dualAv={dualAv} appx={appx} updater={updater} oem={oem}");
+        o.DryRun = true;
+        int filesBeforeMitigate = Directory.GetFiles(root, "*", SearchOption.AllDirectories).Length;
+        int wouldApply = Mitigate.ApplyTier0(log, o, offenders, installs);
+        int filesAfterMitigate = Directory.GetFiles(root, "*", SearchOption.AllDirectories).Length;
+        bool mitigateDryOk = filesBeforeMitigate == filesAfterMitigate && wouldApply > 0;
+        log.Info($"self-test mitigate dry-run: wouldApply={wouldApply} filesUnchanged={filesBeforeMitigate == filesAfterMitigate} result={(mitigateDryOk ? "PASS" : "FAIL")}");
+        bool phase4 = dualAv && appx && updater && oem && mitigateDryOk;
+        log.Info($"self-test phase4 result={(phase4 ? "PASS" : "FAIL")}");
+        return okAll && invOk && phase4 ? 0 : 11;
     }
 }
