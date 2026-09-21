@@ -127,10 +127,29 @@ public static class Mitigate
                         continue;
                     }
 
-                    // SecurityConflicts missing-exclusion: add Defender QB path exclusions only.
+                    // SecurityConflicts missing-exclusion: Defender exclusions only make
+                    // sense when Defender owns real-time protection; otherwise the
+                    // active engine needs the exclusion (Tier-1 vendor guidance).
                     if (string.Equals(category, "SecurityConflicts", StringComparison.OrdinalIgnoreCase)
                         && name.Contains("exclusion", StringComparison.OrdinalIgnoreCase))
                     {
+                        var engine = SecurityEngine.Resolve(log, o.FixtureRoot,
+                            SoftwareInventory.GetInstalledApps(log, o.FixtureRoot)
+                                .Where(a => a.Name.Contains("Norton", StringComparison.OrdinalIgnoreCase)
+                                    || a.Name.Contains("McAfee", StringComparison.OrdinalIgnoreCase)
+                                    || a.Name.Contains("Trend Micro", StringComparison.OrdinalIgnoreCase)
+                                    || a.Name.Contains("Avast", StringComparison.OrdinalIgnoreCase)
+                                    || a.Name.Contains("Kaspersky", StringComparison.OrdinalIgnoreCase)
+                                    || a.Name.Contains("Bitdefender", StringComparison.OrdinalIgnoreCase)
+                                    || a.Name.Contains("ESET", StringComparison.OrdinalIgnoreCase)
+                                    || a.Name.Contains("Sophos", StringComparison.OrdinalIgnoreCase))
+                                .Select(a => a.Name).ToList());
+                        if (!engine.DefenderRealTime && !simulated && !dryRun)
+                        {
+                            log.Warn($"skip Defender exclusion: active engine is {engine.ActiveEngine} — add the QB exclusion in its console (see Tier-1 guidance); not counted");
+                            skipped++;
+                            continue;
+                        }
                         var dirs = installs
                             .Where(i => i is not null)
                             .SelectMany(i => new[] { i.ProgramDir, i.DataDir })

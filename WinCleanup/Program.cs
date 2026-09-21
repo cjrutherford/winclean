@@ -4,6 +4,11 @@ using WinCleanup.Models;
 using WinCleanup.Utils;
 
 var o = Parse(args);
+string defaultLogDir = Path.Combine(
+    Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+    "WinCleanup", "logs");
+if (!string.IsNullOrEmpty(o.FixtureRoot) && o.LogDir == defaultLogDir)
+    o.LogDir = Path.Combine(o.FixtureRoot, "logs"); // fixture runs stay self-contained
 if (string.IsNullOrEmpty(o.FixtureRoot) && !OperatingSystem.IsWindows())
     o.LogDir = Path.Combine(Path.GetTempPath(), "WinCleanup", "logs");
 using var log = new Logger(o.LogDir, verbose: o.Verbose);
@@ -23,10 +28,17 @@ if (o.DoClean && !AdminHelper.IsAdmin() && OperatingSystem.IsWindows())
 }
 
 var installs = QuickBooksCleaner.Detect(log, o.FixtureRoot);
+var summary = new Summary();
+summary.Mode($"{(o.DoClean ? "clean" : "audit")}{(o.OffendersOnly ? " + offenders" : "")}{(o.Mitigate ? " + mitigate" : "")}{(o.DryRun ? " (dry-run)" : " (LIVE)")}");
 
 if (o.OffendersOnly)
 {
-    RunOffenders(log, o, installs);
+    var (offenders, mitigated) = RunOffenders(log, o, installs);
+    summary.TopOffenders(offenders);
+    summary.Action(offenders.Count == 0 ? "No offenders found" : $"{offenders.Count} offenders ranked");
+    if (mitigated > 0) summary.Action($"Tier-0 mitigation: {mitigated} actions{(o.DryRun ? " (dry-run preview)" : "")}; undo bundle in {o.LogDir}");
+    if (!o.Mitigate && offenders.Any(f => f.Tier == "Tier0")) summary.Next("Preview Tier-0 fixes: --offenders --mitigate --dry-run");
+    summary.Print(log, log.Path);
     log.Info($"done. full verbose log: {log.Path}");
     return 0;
 }
@@ -46,7 +58,11 @@ if (o.DoAudit)
         SoftwareInventory.Report(log);
         BottleneckReport.Run(log);
     }
-    RunOffenders(log, o, installs);
+    var (offenders, mitigated) = RunOffenders(log, o, installs);
+    summary.TopOffenders(offenders);
+    summary.Action($"{offenders.Count} offenders ranked");
+    if (mitigated > 0) summary.Action($"Tier-0 mitigation: {mitigated} actions{(o.DryRun ? " (dry-run preview)" : "")}; undo bundle in {o.LogDir}");
+    if (!o.Mitigate && offenders.Any(f => f.Tier == "Tier0")) summary.Next("Preview Tier-0 fixes: --offenders --mitigate --dry-run");
 }
 
 if (o.DoClean)
@@ -66,12 +82,17 @@ if (o.DoClean)
     log.Info($"windows: {w.FilesDeleted} files, {w.BytesFreed / 1e6:F1}MB freed, skipped locked={w.FilesSkippedLocked} age={w.FilesSkippedAge}");
     log.Info($"quickbooks: {q.FilesDeleted} files, {q.BytesFreed / 1e6:F1}MB freed, skipped protected={q.FilesSkippedProtected}");
     foreach (var e in w.Errors.Concat(q.Errors).Take(20)) log.Warn("err: " + e);
+    summary.Action(o.DryRun
+        ? $"Would delete {w.FilesDeleted + q.FilesDeleted} files (~{(w.BytesFreed + q.BytesFreed) / 1e6:F1}MB) — dry-run, nothing removed"
+        : $"Deleted {w.FilesDeleted + q.FilesDeleted} files (~{(w.BytesFreed + q.BytesFreed) / 1e6:F1}MB freed)");
+    if (o.DryRun) summary.Next("Apply for real: --clean --yes (Admin, QB closed)");
 }
 
+summary.Print(log, log.Path);
 log.Info($"done. full verbose log: {log.Path}");
 return 0;
 
-static void RunOffenders(Logger log, CleanupOptions o, List<QuickBooksCleaner.Install> installs)
+static (List<Offender> offenders, int mitigated) RunOffenders(Logger log, CleanupOptions o, List<QuickBooksCleaner.Install> installs)
 {
     log.Info("=== WORST-OFFENDER SCAN ===");
     var offenders = OffenderScan.Scan(log, o, installs);
@@ -86,18 +107,20 @@ static void RunOffenders(Logger log, CleanupOptions o, List<QuickBooksCleaner.In
         if (!string.IsNullOrEmpty(f.FixHint)) log.Info($"       fix: {f.FixHint}");
     }
     if (installs.Count > 0) QbFirewall.PrintRules(log, installs);
+    int mitigated = 0;
     if (o.Mitigate)
     {
         if (!o.AssumeYes && o.DryRun == false && string.IsNullOrEmpty(o.FixtureRoot))
         {
             Console.Write("Type MITIGATE to apply Tier-0 fixes: ");
-            if (Console.ReadLine()?.Trim() != "MITIGATE") { log.Info("mitigation aborted by user"); return; }
+            if (Console.ReadLine()?.Trim() != "MITIGATE") { log.Info("mitigation aborted by user"); return (offenders, 0); }
         }
-        int applied = Mitigate.ApplyTier0(log, o, offenders, installs);
-        log.Info($"Tier-0 mitigation: {applied} actions{(o.DryRun ? " (dry-run)" : "")}");
+        mitigated = Mitigate.ApplyTier0(log, o, offenders, installs);
+        log.Info($"Tier-0 mitigation: {mitigated} actions{(o.DryRun ? " (dry-run)" : "")}");
     }
     else if (offenders.Any(f => f.Tier == "Tier0"))
         log.Info("Tier-0 fixes available — re-run with --mitigate [--dry-run] to preview/apply");
+    return (offenders, mitigated);
 }
 
 static CleanupOptions Parse(string[] args)

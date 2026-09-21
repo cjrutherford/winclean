@@ -42,16 +42,7 @@ public static class OffenderScan
     static void DetectSecurityConflicts(Logger log, string fixtureRoot,
         List<QuickBooksCleaner.Install> installs, List<Offender> out_)
     {
-        // Defender counts iff the windefend service is RUNNING (Windows only).
-        bool defenderRunning = false;
-        if (OperatingSystem.IsWindows())
-        {
-            var scOut = SysProbe.Run("sc", "query windefend", 15000, log);
-            defenderRunning = scOut.Contains("RUNNING", StringComparison.OrdinalIgnoreCase);
-            log.Verbose($"security: defender running={defenderRunning}");
-        }
-        else log.Verbose("security: defender service check skipped non-Windows");
-
+        // Active engine resolution (Defender vs third-party) lives in SecurityEngine.
         string[] avKeys =
         [
             "Norton", "McAfee", "Trend Micro", "Avast", "AVG", "Kaspersky",
@@ -65,7 +56,9 @@ public static class OffenderScan
             log.Verbose($"security: third-party AV match '{a.Name}' pub='{a.Publisher}'");
 
         var engines = new List<string>();
-        if (defenderRunning) engines.Add("Windows Defender");
+        var engineState = SecurityEngine.Resolve(log, fixtureRoot, thirdParty.Select(a => a.Name).ToList());
+        log.Verbose($"security: active engine = {engineState.ActiveEngine}");
+        if (engineState.DefenderRealTime) engines.Add("Windows Defender");
         engines.AddRange(thirdParty.Select(a => a.Name));
 
         if (engines.Count >= 2)
@@ -100,7 +93,7 @@ public static class OffenderScan
                 string normQb = qbdir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
                 bool covered = exclusions.Any(e => normQb.StartsWith(e, StringComparison.OrdinalIgnoreCase));
                 if (covered) log.Verbose($"security: QB {inst.Version} at {qbdir} covered by Defender exclusion");
-                else
+                else if (engineState.DefenderRealTime)
                 {
                     string evidence = $"QuickBooks {inst.Version} at {qbdir} has no Defender ExclusionPath covering it.";
                     log.Verbose($"security: missing-exclusion {evidence}");
@@ -108,6 +101,17 @@ public static class OffenderScan
                         "SecurityConflicts", $"Defender exclusion missing for {inst.Version}",
                         70, 1.5, evidence, "Tier0",
                         $"Add-MpPreference -ExclusionPath '{qbdir}'"));
+                }
+                else
+                {
+                    // Defender exclusions are inert while another engine owns real-time
+                    // protection — route to Tier-1 vendor guidance instead of Tier-0.
+                    string evidence = $"QuickBooks {inst.Version} at {qbdir} is scanned by {engineState.ActiveEngine}; Defender exclusions would be inert.";
+                    log.Verbose($"security: vendor-exclusion-needed {evidence}");
+                    out_.Add(new Offender(
+                        "SecurityConflicts", $"AV exclusion missing for {inst.Version} (active: {engineState.ActiveEngine})",
+                        70, 1.5, evidence, "Tier1",
+                        $"Add an exclusion for '{qbdir}' in the {engineState.ActiveEngine} console (allowed programs / real-time exclusions), then re-run --offenders to verify"));
                 }
             }
         }
