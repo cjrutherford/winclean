@@ -1,0 +1,13 @@
+# .NET
+bin/
+obj/
+publish/
+*.user
+*.suo
+.vs/
+# logs / fixtures
+*.log
+/tmp/
+# OS
+.DS_Store
+Thumbs.db
