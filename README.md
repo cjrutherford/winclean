@@ -43,6 +43,9 @@ On a non-Windows box with `--fixture-root`, Tier-0 simulates (log only).
 Logging is verbose by default: every file decision (`DELETE`/`SKIP` reason with
 age+size, `ENTER`/`EXIT` per directory, `PROBE` per OS tool) goes to both console
 and timestamped log file. `--quiet` keeps the file log but shortens console.
+Every run prints a stage plan (`Plan: [1/5] …`) with `[k/n]` headers per phase,
+sweep progress every 500 files, and a closing `SUMMARY` block (mode, top findings,
+actions, next steps, log path) — followable without opening the log.
 
 ## Manual verification without Windows (Linux)
 
