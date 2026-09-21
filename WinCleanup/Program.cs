@@ -21,6 +21,7 @@ using var log = new Logger(o.LogDir, verbose: o.Verbose);
 Logger.Prune(o.LogDir, keep: 10); // log rolling: keep the 10 newest logs
 if (o.Color == "always") Tui.ColorEnabled = true;
 else if (o.Color == "never") Tui.ColorEnabled = false;
+Tui.ApplyColorMode();
 var display = new Display(log);
 
 // Primary interface: menu-driven wizard when started bare on a console.

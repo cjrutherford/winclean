@@ -17,7 +17,10 @@
     <DebugType>embedded</DebugType>
   </PropertyGroup>
 
-  <!-- Zero third-party dependencies by design: BCL + OS tools (sc/wevtutil/schtasks)
-       only, so `dotnet build` works offline and publish is a single self-contained exe. -->
+  <!-- Display dependency only: Spectre.Console renders the terminal UI.
+       Everything else is BCL + in-box OS tools. Publish stays single-file. -->
+  <ItemGroup>
+    <PackageReference Include="Spectre.Console" Version="0.57.2" />
+  </ItemGroup>
 
 </Project>

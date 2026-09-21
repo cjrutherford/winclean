@@ -12,7 +12,7 @@ public static class Wizard
     public static CleanupOptions? Run(Logger log, Display display, CleanupOptions o)
     {
         display.Section("WinCleanup setup");
-        Console.WriteLine(Tui.Dimmed("  Build your run below. Flags remain available for scripts (--help)."));
+        Console.WriteLine("  Build your run below. Flags remain available for scripts (--help).");
         Console.WriteLine();
 
         var tasks = Menu.PickMany("What should WinCleanup do?",
@@ -63,8 +63,8 @@ public static class Wizard
 
         string cmd = ToCommandLine(o);
         Console.WriteLine();
-        display.Line($"{Tui.B("Equivalent command:")} {Tui.Ok(cmd)}");
-        display.Line(Tui.Dimmed("  Save this line to repeat the exact run from scripts."));
+        display.Line($"Equivalent command: {cmd}");
+        display.Line("  Save this line to repeat the exact run from scripts.");
         log.Info($"wizard: equivalent command: {cmd}");
         int go = Menu.PickOne("Ready?", ["Run now", "Cancel"]);
         if (go != 0) { log.Info("wizard: cancelled at confirm step"); return null; }

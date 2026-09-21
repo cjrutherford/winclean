@@ -1,6 +1,7 @@
 # WinCleanup — Windows + QuickBooks-safe cleanup, audit & inventory
 
-Single-file, zero-dependency .NET 8 console tool. No NuGet packages, no config files.
+Single-file .NET 8 console tool. One display dependency (Spectre.Console);
+everything else is BCL + in-box OS tools. Publish stays self-contained.
 
 **Start with no flags** on an interactive console for the menu-driven setup
 wizard (audit / scan / clean / Tier-0 / lean, dry-run or live). The wizard shows
