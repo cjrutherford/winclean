@@ -17,6 +17,8 @@ public sealed class CleanupOptions
     // --offenders: run only the offender scan (+ firewall rules). --mitigate: apply Tier-0.
     public bool OffendersOnly { get; set; }
     public bool Mitigate { get; set; }
+    // --lean: constrained-environment profile (startup impact + service/feature guidance).
+    public bool Lean { get; set; }
     public string LogDir { get; set; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
         "WinCleanup", "logs");

@@ -74,6 +74,17 @@ public static class SelfTest
             "Adobe Acrobat Update Task,Ready\n" +
             "Adobe Genuine Software Monitor,Ready\n" +
             "GoogleUpdateTaskMachineCore,Running\n");
+        // Fake startup + services for startup-impact and lean-profile checks.
+        File.WriteAllText(Path.Combine(root, "startup.csv"),
+            "Scope,Name,Command\n" +
+            "CurrentUser/Registry64,Spotify,C:\\Users\\test\\AppData\\Roaming\\Spotify\\Spotify.exe\n" +
+            "LocalMachine/Registry32,AdobeARM,C:\\Program Files\\Adobe\\ARM\\AdobeARM.exe\n" +
+            "CurrentUser/Registry64,SomeHelper,C:\\Tools\\SomeHelper.exe\n" +
+            "LocalMachine/Registry64,SecurityHealth,C:\\Windows\\System32\\SecurityHealthSystray.exe\n");
+        File.WriteAllText(Path.Combine(root, "services.csv"),
+            "Name,StartType,State\n" +
+            "XblGameSave,2 AUTO_START,RUNNING\n" +
+            "SysMain,2 AUTO_START,RUNNING\n");
         return root;
     }
 
@@ -131,18 +142,23 @@ public static class SelfTest
 
         // Phase 4: 0.2 offender scan — dual-AV flagged, Tier-0 dry-run changes nothing.
         var offenders = OffenderScan.Scan(log, o, installs);
+        offenders.AddRange(StartupAnalyzer.Analyze(log, o));
+        o.Lean = true;
+        offenders.AddRange(LeanProfile.Analyze(log, o, installs));
         bool dualAv = offenders.Any(f => f.Category == "SecurityConflicts" && (f.Name.Contains("McAfee") || f.Name.Contains("Norton")));
         bool appx = offenders.Any(f => f.Category == "InboxAppx");
         bool updater = offenders.Any(f => f.Category == "UpdaterSprawl");
         bool oem = offenders.Any(f => f.Category == "OemBloat");
-        log.Info($"self-test offenders: total={offenders.Count} dualAv={dualAv} appx={appx} updater={updater} oem={oem}");
+        bool startup = offenders.Any(f => f.Category == "StartupImpact" && f.Tier == "Tier0");
+        bool leanSvc = offenders.Any(f => f.Category == "LeanService" && f.Name == "service::XblGameSave");
+        log.Info($"self-test offenders: total={offenders.Count} dualAv={dualAv} appx={appx} updater={updater} oem={oem} startup={startup} leanSvc={leanSvc}");
         o.DryRun = true;
         int filesBeforeMitigate = Directory.GetFiles(root, "*", SearchOption.AllDirectories).Length;
         int wouldApply = Mitigate.ApplyTier0(log, o, offenders, installs);
         int filesAfterMitigate = Directory.GetFiles(root, "*", SearchOption.AllDirectories).Length;
         bool mitigateDryOk = filesBeforeMitigate == filesAfterMitigate && wouldApply > 0;
         log.Info($"self-test mitigate dry-run: wouldApply={wouldApply} filesUnchanged={filesBeforeMitigate == filesAfterMitigate} result={(mitigateDryOk ? "PASS" : "FAIL")}");
-        bool phase4 = dualAv && appx && updater && oem && mitigateDryOk;
+        bool phase4 = dualAv && appx && updater && oem && startup && leanSvc && mitigateDryOk;
         log.Info($"self-test phase4 result={(phase4 ? "PASS" : "FAIL")}");
         return okAll && invOk && phase4 ? 0 : 11;
     }

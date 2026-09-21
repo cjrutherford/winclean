@@ -34,7 +34,7 @@ else
     if (o.DoAudit) { stages.Add("Audit"); stages.Add("Offender scan"); }
     if (o.DoClean) stages.Add("Cleanup");
 }
-if (o.Mitigate) stages.Add("Mitigate");
+if (o.Lean) stages.Add("Lean profile");
 stages.Add("Summary");
 var plan = new StagePlan(log, stages);
 
@@ -51,6 +51,12 @@ if (o.OffendersOnly)
     summary.Action(offenders.Count == 0 ? "No offenders found" : $"{offenders.Count} offenders ranked");
     if (mitigated > 0) summary.Action($"Tier-0 mitigation: {mitigated} actions{(o.DryRun ? " (dry-run preview)" : "")}; undo bundle in {o.LogDir}");
     if (!o.Mitigate && offenders.Any(f => f.Tier == "Tier0")) summary.Next("Preview Tier-0 fixes: --offenders --mitigate --dry-run");
+    if (o.Lean)
+    {
+        plan.Begin("Lean profile");
+        LeanProfile.Report(log, o, installs);
+        summary.Finding("Lean profile reviewed — see LEAN PROFILE section");
+    }
     summary.Print(log, log.Path);
     log.Info($"done. full verbose log: {log.Path}");
     return 0;
@@ -104,6 +110,13 @@ if (o.DoClean)
     if (o.DryRun) summary.Next("Apply for real: --clean --yes (Admin, QB closed)");
 }
 
+if (o.Lean && !o.OffendersOnly)
+{
+    plan.Begin("Lean profile");
+    LeanProfile.Report(log, o, installs);
+    summary.Finding("Lean profile reviewed — see LEAN PROFILE section");
+}
+
 plan.Begin("Summary");
 summary.Print(log, log.Path);
 log.Info($"done. full verbose log: {log.Path}");
@@ -114,6 +127,8 @@ static (List<Offender> offenders, int mitigated) RunOffenders(Logger log, Cleanu
     log.Info("=== WORST-OFFENDER SCAN ===");
     var offenders = OffenderScan.Scan(log, o, installs);
     offenders.AddRange(QbFirewall.Check(log, installs));
+    offenders.AddRange(StartupAnalyzer.Analyze(log, o));
+    if (o.Lean) offenders.AddRange(LeanProfile.Analyze(log, o, installs));
     offenders = offenders.OrderByDescending(x => x.Score * x.ConflictMultiplier).ToList();
     log.Info($"offenders ranked: {offenders.Count}");
     int rank = 0;
@@ -127,7 +142,7 @@ static (List<Offender> offenders, int mitigated) RunOffenders(Logger log, Cleanu
     int mitigated = 0;
     if (o.Mitigate)
     {
-        plan.Begin("Mitigate");
+        log.Info("Tier-0 mitigation starting (consented)");
         if (!o.AssumeYes && o.DryRun == false && string.IsNullOrEmpty(o.FixtureRoot))
         {
             Console.Write("Type MITIGATE to apply Tier-0 fixes: ");
@@ -157,6 +172,7 @@ static CleanupOptions Parse(string[] args)
         else if (a == "--self-test") { o.SelfTest = true; o.Verbose = true; }
         else if (a == "--offenders") { o.OffendersOnly = true; o.DoClean = false; o.Verbose = true; }
         else if (a == "--mitigate") o.Mitigate = true;
+        else if (a == "--lean") o.Lean = true;
         else if (a.StartsWith("--fixture-root=")) o.FixtureRoot = a["--fixture-root=".Length..];
         else if (a.StartsWith("--min-age=") && int.TryParse(a["--min-age=".Length..], out var d)) o.MinAgeDays = d;
         else if (a.StartsWith("--log-dir=")) o.LogDir = a["--log-dir=".Length..];

@@ -13,6 +13,7 @@ public static class SoftwareInventory
     public record App(string Name, string Version, string Publisher, long SizeBytes, string Source);
     public record StartupEntry(string Scope, string Name, string Command);
     public record TaskEntry(string Name, string State, string Author);
+    public record ServiceEntry(string Name, string StartType, string State);
 
     // Apps Intuit/QB depends on or that must never be auto-removed.
     static readonly string[] KeepIntact =
@@ -84,9 +85,24 @@ public static class SoftwareInventory
         return apps.GroupBy(a => a.Name, StringComparer.OrdinalIgnoreCase).Select(g => g.First()).OrderBy(a => a.Name).ToList();
     }
 
-    public static List<StartupEntry> GetStartupEntries(Logger log)
+    public static List<StartupEntry> GetStartupEntries(Logger log, string fixtureRoot = "")
     {
         var list = new List<StartupEntry>();
+        if (!string.IsNullOrEmpty(fixtureRoot))
+        {
+            var csv = Path.Combine(fixtureRoot, "startup.csv");
+            if (File.Exists(csv))
+            {
+                foreach (var line in File.ReadAllLines(csv).Skip(1))
+                {
+                    var p = SplitCsv(line, 3);
+                    if (p != null) list.Add(new StartupEntry(p[0], p[1], p[2]));
+                }
+                log.Verbose($"fixture startup: {list.Count} from {csv}");
+            }
+            else log.Verbose($"fixture startup: no startup.csv at {csv}");
+            return list;
+        }
         if (!OperatingSystem.IsWindows()) return list;
         if (OperatingSystem.IsWindows())
         foreach (var hive in new[] { RegistryHive.LocalMachine, RegistryHive.CurrentUser })
@@ -116,6 +132,53 @@ public static class SoftwareInventory
             catch (Exception ex) { log.Verbose($"startup folder skip {dir}: {ex.Message}"); }
         }
         return list;
+    }
+
+    // Services of interest: live via `sc qc` per name (cheap, targeted);
+    // fixture via services.csv (Name,StartType,State).
+    public static List<ServiceEntry> GetServices(Logger log, IEnumerable<string> names, string fixtureRoot = "")
+    {
+        var list = new List<ServiceEntry>();
+        if (!string.IsNullOrEmpty(fixtureRoot))
+        {
+            var csv = Path.Combine(fixtureRoot, "services.csv");
+            if (File.Exists(csv))
+            {
+                var wanted = new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);
+                foreach (var line in File.ReadAllLines(csv).Skip(1))
+                {
+                    var p = SplitCsv(line, 3);
+                    if (p != null && wanted.Contains(p[0])) list.Add(new ServiceEntry(p[0], p[1], p[2]));
+                }
+                log.Verbose($"fixture services: {list.Count} from {csv}");
+            }
+            return list;
+        }
+        if (!OperatingSystem.IsWindows()) return list;
+        foreach (var n in names)
+        {
+            try
+            {
+                var out_ = SysProbe.Run("sc", $"qc {n}", 15000, log);
+                if (string.IsNullOrWhiteSpace(out_) || out_.Contains("FAILED", StringComparison.OrdinalIgnoreCase))
+                { log.Verbose($"service {n}: not installed"); continue; }
+                string start = out_.Split('\n').Select(l => l.Trim())
+                    .FirstOrDefault(l => l.StartsWith("START_TYPE", StringComparison.Ordinal)) ?? "";
+                string stateOut = SysProbe.Run("sc", $"query {n}", 15000, log);
+                string state = stateOut.Contains("RUNNING") ? "RUNNING" : stateOut.Contains("STOPPED") ? "STOPPED" : "unknown";
+                list.Add(new ServiceEntry(n, start, state));
+                log.Verbose($"service {n}: {start} / {state}");
+            }
+            catch (Exception ex) { log.Verbose($"service {n} probe: {ex.Message}"); }
+        }
+        return list;
+    }
+
+    static string[]? SplitCsv(string line, int want)
+    {
+        var p = line.Split(',');
+        if (p.Length < want) return null;
+        return p.Select(s => s.Trim().Trim('"')).ToArray();
     }
 
     public static List<TaskEntry> GetScheduledTasks(Logger log)

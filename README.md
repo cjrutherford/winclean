@@ -25,6 +25,11 @@ Single-file, zero-dependency .NET 8 console tool. No NuGet packages, no config f
    updater-task sprawl, OEM bloat, QuickBooks blockers (AV exclusions, firewall ports,
    NAS company files, oversized `.tlg`). Ranked 0–100 with conflict multipliers,
    each with evidence and a fix hint. Included in every audit; `--offenders` runs it standalone.
+7. **Startup impact + lean profile** (`--lean`): ranks autoruns by boot cost
+   (high/medium, never AV/QB/drivers), and for constrained boxes recommends
+   services to set Manual (tiny Tier-0 safe list: Xbox + Maps services, backed up),
+   optional Windows features to review (guided DISM), and power/visual quick wins.
+   QB hosts automatically exempt file-sharing services.
 
 ## Offender mitigation tiers (0.2)
 
@@ -71,6 +76,7 @@ WinCleanup.exe --clean --yes                     # real run (Admin, QB closed)
 WinCleanup.exe --offenders --verbose             # ranked offender list + QB firewall rules
 WinCleanup.exe --offenders --mitigate --dry-run  # preview Tier-0 fixes
 WinCleanup.exe --offenders --mitigate --yes      # apply Tier-0 (Admin; writes undo bundle)
+WinCleanup.exe --audit-only --lean               # + startup impact + constrained-box guidance
 ```
 
 Build the single-file exe (from Windows, or cross-publish):

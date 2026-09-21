@@ -101,6 +101,49 @@ public static class Mitigate
                         continue;
                     }
 
+                    // LeanService Tier-0: ONLY the tiny safe list; anything else skipped.
+                    // service::<name>. Backup = prior START_TYPE; restore via sc config.
+                    if (name.StartsWith("service::", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string svc = name["service::".Length..].Trim();
+                        if (!LeanProfile.Tier0Services.Contains(svc, StringComparer.OrdinalIgnoreCase))
+                        {
+                            log.Verbose($"no applier: service '{svc}' not in Tier-0 safe list — guided only");
+                            skipped++;
+                            continue;
+                        }
+                        string prior = "unknown";
+                        if (!simulated)
+                        {
+                            var qc = SysProbe.Run("sc", $"qc {svc}", 15000, log);
+                            var line = qc.Split('\n').Select(l => l.Trim())
+                                .FirstOrDefault(l => l.StartsWith("START_TYPE", StringComparison.Ordinal));
+                            if (line != null) prior = line[(line.IndexOf(':') + 1)..].Trim();
+                        }
+                        if (dryRun)
+                        {
+                            log.Info($"[dry-run] would run: sc config {svc} start= demand && sc stop {svc} (prior: {prior}, offender={name})");
+                            undoRows.Add(new UndoRow(Now(), name, "service-manual", "[dry-run] " + svc + " was " + prior));
+                            applied++;
+                        }
+                        else if (simulated)
+                        {
+                            log.Verbose($"simulate: sc config {svc} start= demand && sc stop {svc} (offender={name})");
+                            undoRows.Add(new UndoRow(Now(), name, "service-manual", "(simulated) " + svc));
+                            applied++;
+                        }
+                        else
+                        {
+                            log.Verbose($"service manual: sc config {svc} start= demand (prior: {prior})");
+                            SysProbe.Run("sc", $"config {svc} start= demand", 15000, log);
+                            SysProbe.Run("sc", $"stop {svc}", 15000, log);
+                            log.Info($"set {svc} to Manual (was {prior}) and stopped it");
+                            undoRows.Add(new UndoRow(Now(), name, "service-manual", svc + " was " + prior + " — restore: sc config " + svc + " start= " + StartFlag(prior)));
+                            applied++;
+                        }
+                        continue;
+                    }
+
                     // UpdaterSprawl: disable (never delete) the scheduled task.
                     if (string.Equals(category, "UpdaterSprawl", StringComparison.OrdinalIgnoreCase))
                     {
@@ -282,6 +325,11 @@ public static class Mitigate
 
     static string DisplayKeyPath(string hive) =>
         (hive == "HKLM" ? @"HKEY_LOCAL_MACHINE\" : @"HKEY_CURRENT_USER\") + RunSubkey;
+
+    static string StartFlag(string startType) =>
+        startType.Contains("DEMAND", StringComparison.OrdinalIgnoreCase) ? "demand"
+        : startType.Contains("DISABLED", StringComparison.OrdinalIgnoreCase) ? "disabled"
+        : startType.Contains("AUTO", StringComparison.OrdinalIgnoreCase) ? "auto" : "demand";
 
     // Real-Windows Run-value removal: backup value data into the undo bundle, then delete.
     // Returns true when a value was actually removed.
